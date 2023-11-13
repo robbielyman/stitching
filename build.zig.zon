@@ -1,0 +1,15 @@
+.{
+    .paths = .{ "src", "build.zig", "build.zig.zon" },
+    .name = "stitching",
+    .version = "0.0.0",
+    .dependencies = .{
+        .prism = .{
+            .url = "https://github.com/rainbow-apps/prism/archive/c53934d012b24b5c4e024ef55708fffa2d5bada1.tar.gz",
+            .hash = "12204cdfa8fe5ae9ce06ae7a29a44af53b6351f3e6fb18bbf28bfccaeb78b0be91a1",
+        },
+        .ziglua = .{
+            .url = "https://github.com/natecraddock/ziglua/archive/0117fbc349ef9cc5e6111cebf09894d9f7bd7dec.tar.gz",
+            .hash = "1220a6d76924a2336b1c8adaa1c40952806140101ebd0a4f0d9e2978d7ae48874b70",
+        },
+    },
+}
