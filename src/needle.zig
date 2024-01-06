@@ -3,66 +3,91 @@ const prism = @import("prism");
 const ziglua = @import("ziglua");
 const Lua = ziglua.Lua;
 const wrap = ziglua.wrap;
+const Graphics = prism.Graphics(.Native);
+const Needle = @This();
 
-var context: *prism.graphics.Renderer = undefined;
-var gpa: std.heap.GeneralPurposeAllocator(.{}) = undefined;
-var lvm: Lua = undefined;
+lvm: Lua,
+context: Graphics.RenderingContext,
+widget: prism.Widget,
 
-pub fn init(render_context: *prism.graphics.Renderer, filename: [:0]const u8) !void {
-    context = render_context;
-    gpa = .{};
-    const allocator = gpa.allocator();
-    lvm = try Lua.init(allocator);
-    lvm.openLibs();
+pub fn init(
+    self: *Needle,
+    allocator: std.mem.Allocator,
+    filename: []const u8,
+) !void {
+    self.lvm.openLibs();
 
-    lvm.newTable();
-    register_stitching("pixel_shader_compile", wrap(pixel_shader_compile));
-    register_stitching("pixel_shader_submit", wrap(pixel_shader_submit));
+    self.lvm.newTable();
+    self.registerStitching("pixel_shader_compile", wrap(pixelShaderCompile));
+    self.registerStitching("pixel_shader_widget", wrap(pixelShaderWidget));
+    self.lvm.pushLightUserdata(self);
+    self.lvm.setField(-2, "_ctx");
 
-    lvm.setGlobal("_stitching");
+    self.lvm.setGlobal("_stitching");
 
     const cmd = try std.fmt.allocPrint(allocator, "dofile(\"{s}\")\n", .{filename});
     defer allocator.free(cmd);
-    try run_code(cmd);
+    try self.runCode(cmd);
 }
 
-pub fn deinit() void {
-    lvm.close();
-    _ = gpa.deinit();
+pub fn deinit(self: *Needle) void {
+    defer self.lvm.close();
+    self.runCode("cleanup()") catch return;
 }
 
-fn register_stitching(name: [:0]const u8, f: ziglua.CFn) void {
-    lvm.pushFunction(f);
-    lvm.setField(-2, name);
+fn registerStitching(self: *Needle, name: [:0]const u8, f: ziglua.CFn) void {
+    self.lvm.pushFunction(f);
+    self.lvm.setField(-2, name);
 }
 
-fn pixel_shader_compile(l: *Lua) i32 {
+fn getContext(l: *Lua) !*Needle {
+    _ = try l.getGlobal("_stitching");
+    const kind = l.getField(-1, "_ctx");
+    if (kind != .light_userdata) return error.BadType;
+    return try l.toUserdata(Needle, -1);
+}
+
+fn pixelShaderCompile(l: *Lua) i32 {
     if (l.getTop() != 1)
         l.raiseErrorStr("requires one argument!", .{});
-    const source = l.toBytes(1) catch unreachable;
-    const pipeline = context.compilePixelShader(source) catch l.raiseErrorStr("shader compilation failed!", .{});
+    const source_ptr = l.toString(1) catch l.raiseErrorStr("string expected, got %s", .{l.typeName(l.typeOf(1)).ptr});
+    const ctx = getContext(l) catch l.raiseErrorStr("unable to get context!", .{});
+    const pipeline = Graphics.PixelShader.define(
+        ctx.context,
+        std.mem.sliceTo(source_ptr, 0),
+        null,
+        null,
+    ) catch l.raiseErrorStr("compilation failed!", .{});
     l.pushLightUserdata(pipeline.handle);
     return 1;
 }
 
-fn pixel_shader_submit(l: *Lua) i32 {
+fn pixelShaderWidget(l: *Lua) i32 {
     if (l.getTop() != 1)
         l.raiseErrorStr("requires one argument!", .{});
-    const pipeline = l.toUserdata(anyopaque, 1) catch unreachable;
-    context.commands.append(.{
-        .PixelShader = .{
-            .pipeline = pipeline,
-        },
-    }) catch @panic("OOM!");
-    return 0;
+    const pipeline = l.toUserdata(anyopaque, 1) catch l.raiseErrorStr("shader (userdata) expected got %s", .{l.typeName(l.typeOf(1)).ptr});
+    const shader: Graphics.PixelShader = .{
+        .handle = pipeline,
+    };
+    const ctx = getContext(l) catch l.raiseErrorStr("unable to get context!", .{});
+    const widget = shader.widget(
+        ctx.context,
+        .{ .fraction = 1 },
+        .{ .fraction = 1 },
+        null,
+    ) catch l.raiseErrorStr("error creating widget!", .{});
+    l.pushLightUserdata(widget.handle);
+
+    ctx.widget = widget;
+    return 1;
 }
 
-fn run_code(code: []const u8) !void {
-    try lvm.loadBuffer(code, "s_run_code", .text);
-    try docall(&lvm, 0, 0);
+fn runCode(self: *Needle, code: []const u8) !void {
+    try self.lvm.loadBuffer(code, "s_run_code", .text);
+    try doCall(&self.lvm, 0, 0);
 }
 
-fn lua_print(l: *Lua) i32 {
+fn luaPrint(l: *Lua) i32 {
     const n = l.getTop();
     l.checkStackErr(2, "too many results to print");
     _ = l.getGlobal("print") catch unreachable;
@@ -71,8 +96,8 @@ fn lua_print(l: *Lua) i32 {
     return 0;
 }
 
-fn message_handler(l: *Lua) i32 {
-    var buf: [1024]u8 = undefined;
+fn messageHandler(l: *Lua) i32 {
+    var buf: [8 * 1024]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buf);
     const allocator = fba.allocator();
     const t = l.typeOf(1);
@@ -80,7 +105,7 @@ fn message_handler(l: *Lua) i32 {
         .string => {
             const msg = l.toBytes(1) catch unreachable;
             l.pop(1);
-            l.traceback(l, msg, 6);
+            l.traceback(l, msg, 1);
         },
         else => {
             const msg = std.fmt.allocPrintZ(
@@ -89,19 +114,19 @@ fn message_handler(l: *Lua) i32 {
                 .{l.typeName(t)},
             ) catch @panic("OOM!");
             l.pop(1);
-            l.traceback(l, msg, 6);
+            l.traceback(l, msg, 1);
         },
     }
     return 1;
 }
 
-fn docall(l: *Lua, nargs: i32, nres: i32) !void {
+fn doCall(l: *Lua, nargs: i32, nres: i32) !void {
     const base = l.getTop() - nargs;
-    l.pushFunction(wrap(message_handler));
+    l.pushFunction(wrap(messageHandler));
     l.insert(base);
     l.protectedCall(nargs, nres, base) catch {
         l.remove(base);
-        _ = lua_print(l);
+        _ = luaPrint(l);
     };
     l.remove(base);
 }

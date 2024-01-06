@@ -4,12 +4,12 @@
     .version = "0.0.0",
     .dependencies = .{
         .prism = .{
-            .url = "https://github.com/rainbow-apps/prism/archive/c53934d012b24b5c4e024ef55708fffa2d5bada1.tar.gz",
-            .hash = "12204cdfa8fe5ae9ce06ae7a29a44af53b6351f3e6fb18bbf28bfccaeb78b0be91a1",
+            .url = "https://github.com/rainbow-apps/prism/archive/45f6bb8a33e4899a7713ca3ec4922d5792be9502.tar.gz",
+            .hash = "1220f7ed6f791178fc344833a972ecf67870d340e5ab9768a55dfcabb109f41e4225",
         },
         .ziglua = .{
-            .url = "https://github.com/natecraddock/ziglua/archive/0117fbc349ef9cc5e6111cebf09894d9f7bd7dec.tar.gz",
-            .hash = "1220a6d76924a2336b1c8adaa1c40952806140101ebd0a4f0d9e2978d7ae48874b70",
+            .url = "https://github.com/natecraddock/ziglua/archive/7f1e80c18fb18030d641c47c8943552f2a139d79.tar.gz",
+            .hash = "1220c99985c207c3d9fc8b86c161cc509f2dd8b76d6598c517451da77d8edae77b60",
         },
     },
 }

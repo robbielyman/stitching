@@ -14,7 +14,6 @@ pub fn build(b: *std.Build) void {
     const prism = b.dependency("prism", .{
         .target = target,
         .optimize = optimize,
-        .graphics = .Native,
     });
     exe.addModule("prism", prism.module("prism"));
     const ziglua = b.dependency("ziglua", .{
